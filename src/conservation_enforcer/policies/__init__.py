@@ -143,16 +143,166 @@ block:
     return assemble(source)
 
 
+def information_density_policy(min_ratio: int = 400) -> bytes:
+    """Block outputs with low information density (too repetitive).
+
+    min_ratio is unique_words / total_words × 1000 (400 = 40% unique minimum).
+    Conservation law: Information density — every token must carry information.
+    """
+    source = f"""
+    ; ── Information Density Conservation Law ──
+
+    MOVI R0, 11             ; syscall: GET_UNIQUE_RATIO
+    SYSCALL
+    MOV  R2, R0             ; R2 = unique ratio
+
+    MOVI R3, {min_ratio}       ; threshold
+
+    JLT  R2, R3, block      ; if ratio < threshold → block
+
+    MOVI R0, 0              ; ALLOW
+    HALT
+
+block:
+    MOVI R1, 5              ; reason: INFORMATION_DENSITY
+    MOVI R0, 8              ; SET_VIOLATION
+    SYSCALL
+    MOVI R0, 1              ; BLOCK
+    HALT
+    """
+    return assemble(source)
+
+
+def scope_discipline_policy(min_overlap: int = 120, max_expansion: int = 10) -> bytes:
+    """Block outputs that drift outside the input's topic scope.
+
+    min_overlap is the minimum word overlap ratio × 1000 (120 = 12%).
+    max_expansion is the maximum ratio of output length to input length.
+    Conservation law: Scope discipline — output stays in the input's potential well.
+    """
+    source = f"""
+    ; ── Scope Discipline Conservation Law ──
+
+    ; Check 1: Category overlap
+    MOVI R0, 7              ; syscall: GET_CATEGORY
+    SYSCALL
+    MOV  R2, R0
+    MOVI R3, {min_overlap}
+    JLT  R2, R3, block
+
+    ; Check 2: Output not excessively long vs input
+    MOVI R0, 1              ; GET_INPUT_LEN
+    SYSCALL
+    MOV  R4, R0
+    MOVI R0, 2              ; GET_OUTPUT_LEN
+    SYSCALL
+    MOV  R5, R0
+
+    ; guard against empty input
+    MOVI R0, 0
+    CMP  R4, R0
+    JE   allow
+
+    ; multiply input_len by {max_expansion} via repeated addition
+    IADD R6, R4, R4     ; 2×
+    IADD R6, R6, R4     ; 3×
+    IADD R6, R6, R4     ; 4×
+    IADD R6, R6, R4     ; 5×
+    IADD R6, R6, R4     ; 6×
+    IADD R6, R6, R4     ; 7×
+    IADD R6, R6, R4     ; 8×
+    IADD R6, R6, R4     ; 9×
+    IADD R6, R6, R4     ; 10×
+
+    JGT  R5, R6, block
+
+allow:
+    MOVI R0, 0
+    HALT
+
+block:
+    MOVI R1, 6              ; reason: SCOPE_DISCIPLINE
+    MOVI R0, 8              ; SET_VIOLATION
+    SYSCALL
+    MOVI R0, 1              ; BLOCK
+    HALT
+    """
+    return assemble(source)
+
+
+def budget_decay_policy(decay_rate: int = 50, min_threshold: int = 10, max_calls: int = 100) -> bytes:
+    """Enforce budget decay over time — each call consumes budget.
+
+    decay_rate is tokens consumed per enforcement call.
+    min_threshold is the minimum budget needed to allow output.
+    max_calls is the maximum enforcement calls before mandatory cooldown.
+    Conservation law: Budget dissipation — the enforcement capacity itself is conserved.
+    """
+    source = f"""
+    ; ── Budget Decay Conservation Law ──
+
+    ; Apply decay for this call
+    MOVI R1, {decay_rate}
+    MOVI R0, 14             ; syscall: DECAY_BUDGET
+    SYSCALL
+    MOV  R2, R0             ; remaining budget
+
+    ; Check budget threshold
+    MOVI R3, {min_threshold}
+    JLT  R2, R3, exhausted
+
+    ; Check call count
+    MOVI R0, 13             ; syscall: GET_CALL_COUNT
+    SYSCALL
+    MOV  R4, R0
+    MOVI R5, {max_calls}
+    JGT  R4, R5, exhausted
+
+    MOVI R0, 0              ; ALLOW
+    HALT
+
+exhausted:
+    MOVI R1, 7              ; reason: BUDGET_EXHAUSTED
+    MOVI R0, 8              ; SET_VIOLATION
+    SYSCALL
+    MOVI R0, 1              ; BLOCK
+    HALT
+    """
+    return assemble(source)
+
+
 def combined_policy(
     max_tokens: int = 500,
     max_repetition: int = 300,
     min_overlap: int = 100,
     min_entropy: int = 1500,
+    min_density: int = 0,
+    enable_decay: bool = False,
+    decay_rate: int = 50,
 ) -> bytes:
-    """Combined conservation policy: length + repetition + category + entropy.
+    """Combined conservation policy: length + repetition + category + entropy + optional density + decay.
 
-    This is the flagship policy — four conservation laws in one bytecode program.
+    This is the flagship policy — up to six conservation laws in one bytecode program.
+    Set min_density > 0 to enable information density checking.
+    Set enable_decay=True to enable budget decay checking.
     """
+    density_check = f"""
+    MOVI R0, 11             ; GET_UNIQUE_RATIO
+    SYSCALL
+    MOV  R2, R0
+    MOVI R3, {min_density}
+    JLT  R2, R3, block_density
+    """ if min_density > 0 else "NOP"
+
+    decay_check = f"""
+    MOVI R1, {decay_rate}
+    MOVI R0, 14             ; DECAY_BUDGET
+    SYSCALL
+    MOV  R2, R0
+    MOVI R3, 10
+    JLT  R2, R3, block_decay
+    """ if enable_decay else "NOP"
+
     source = f"""
     ; ═══════════════════════════════════════════════════════
     ; COMBINED CONSERVATION POLICY
@@ -160,6 +310,8 @@ def combined_policy(
     ;   2. Repetition limit  (information diversity)
     ;   3. Category confinement (topical coherence)
     ;   4. Entropy floor     (information density)
+    ;   5. Information density (optional)
+    ;   6. Budget decay      (optional)
     ; ═══════════════════════════════════════════════════════
 
     ; ── Law 1: Length Budget ──
@@ -192,6 +344,12 @@ def combined_policy(
     MOVI R3, {min_entropy}
     JLT  R2, R3, block_entropy
 
+    ; ── Law 5: Information Density (optional) ──
+    {density_check}
+
+    ; ── Law 6: Budget Decay (optional) ──
+    {decay_check}
+
     ; ── All laws satisfied ──
     MOVI R0, 0              ; ALLOW
     HALT
@@ -220,6 +378,20 @@ block_category:
 
 block_entropy:
     MOVI R1, 4              ; reason: ENTROPY
+    MOVI R0, 8
+    SYSCALL
+    MOVI R0, 1
+    HALT
+
+block_density:
+    MOVI R1, 5              ; reason: INFORMATION_DENSITY
+    MOVI R0, 8
+    SYSCALL
+    MOVI R0, 1
+    HALT
+
+block_decay:
+    MOVI R1, 7              ; reason: BUDGET_EXHAUSTED
     MOVI R0, 8
     SYSCALL
     MOVI R0, 1
