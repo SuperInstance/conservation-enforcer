@@ -1,0 +1,66 @@
+;; ───────────────────────────────────────────────────────────
+;; Scope Discipline Conservation Law
+;; ───────────────────────────────────────────────────────────
+;; Conservation principle: An AI agent's output must remain
+;; within the topic scope established by the input. This is
+;; the informational analog of a potential well in physics —
+;; the response cannot escape the category boundary.
+;;
+;; Metric: category_overlap = (shared_words / output_words) × 1000
+;; Threshold: 120 (= 12% word overlap minimum)
+;;
+;; Additionally checks that output length is proportional to
+;; input complexity (output shouldn't be excessively long
+;; relative to the input — prevents scope expansion).
+;;
+;; Violation code: 6 (Scope discipline)
+;; ───────────────────────────────────────────────────────────
+
+    ; ── Check 1: Category overlap ──
+    MOVI R0, 7              ; syscall: GET_CATEGORY
+    SYSCALL
+    MOV  R2, R0             ; R2 = overlap score
+
+    MOVI R3, 120            ; minimum 12% overlap
+    JLT  R2, R3, block      ; if overlap < threshold → block
+
+    ; ── Check 2: Output length proportional to input ──
+    ; If output is >10x input length, it's scope-expanding
+    MOVI R0, 1              ; syscall: GET_INPUT_LEN
+    SYSCALL
+    MOV  R4, R0             ; R4 = input length
+    MOVI R0, 2              ; syscall: GET_OUTPUT_LEN
+    SYSCALL
+    MOV  R5, R0             ; R5 = output length
+
+    ; R6 = input_length * 10
+    MOVI R0, 0              ; guard against div-by-zero
+    CMP  R4, R0
+    JE   allow              ; empty input → skip ratio check
+
+    IADD R6, R4, R0         ; R6 = R4 + 0 (just copy for now)
+    ; Calculate R5 / R4 and check if > 10
+    ; Use a simple loop to multiply R4 by 10
+    MOV  R7, R4             ; R7 = input_len
+    IADD R6, R4, R4         ; R6 = 2×input
+    IADD R6, R6, R4         ; R6 = 3×input
+    IADD R6, R6, R4         ; R6 = 4×input
+    IADD R6, R6, R4         ; R6 = 5×input
+    IADD R6, R6, R4         ; R6 = 6×input
+    IADD R6, R6, R4         ; R6 = 7×input
+    IADD R6, R6, R4         ; R6 = 8×input
+    IADD R6, R6, R4         ; R6 = 9×input
+    IADD R6, R6, R4         ; R6 = 10×input
+
+    JGT  R5, R6, block      ; if output > 10×input → scope expansion
+
+allow:
+    MOVI R0, 0              ; ALLOW
+    HALT
+
+block:
+    MOVI R1, 6              ; reason: SCOPE_DISCIPLINE
+    MOVI R0, 8              ; syscall: SET_VIOLATION
+    SYSCALL
+    MOVI R0, 1              ; BLOCK
+    HALT
