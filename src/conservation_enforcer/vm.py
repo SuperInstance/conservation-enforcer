@@ -104,8 +104,13 @@ class Memory:
         self.buf = bytearray(size)
 
     def store_i32(self, addr: int, val: int) -> None:
-        if addr + 4 <= len(self.buf):
-            struct.pack_into('<i', self.buf, addr, val & 0x7FFFFFFF if val < 0x80000000 else val)
+        if 0 <= addr and addr + 4 <= len(self.buf):
+            # Mask to 32 bits and pack as unsigned; load_i32 reads it back as
+            # signed. The previous expression (val & 0x7FFFFFFF if val < ...)
+            # both corrupted genuine negatives and crashed with struct.error
+            # for register values >= 0x80000000 (how negatives are represented
+            # in the register file).
+            struct.pack_into('<I', self.buf, addr, val & 0xFFFFFFFF)
 
     def load_i32(self, addr: int) -> int:
         return struct.unpack_from('<i', self.buf, addr)[0]
