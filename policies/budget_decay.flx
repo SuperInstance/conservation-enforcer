@@ -1,0 +1,48 @@
+;; ───────────────────────────────────────────────────────────
+;; Budget Decay Conservation Law
+;; ───────────────────────────────────────────────────────────
+;; Conservation principle: The enforcement budget itself is a
+;; conserved quantity. Each enforcement call consumes budget
+;; (like energy dissipation in a physical system). When budget
+;; reaches zero, further outputs are blocked until a cooldown
+;; period elapses or budget is replenished.
+;;
+;; Decay model:
+;;   - Each call decays budget by `decay_rate` tokens
+;;   - If remaining budget < min_threshold → BLOCK
+;;   - The decay is applied via the DECAY_BUDGET syscall
+;;
+;; Parameters:
+;;   decay_rate = 50 tokens per call
+;;   min_threshold = 10 (must have at least this much budget)
+;;
+;; Violation code: 7 (Budget exhausted / cooldown)
+;; ───────────────────────────────────────────────────────────
+
+    ; ── Apply decay for this call ──
+    MOVI R1, 50             ; decay amount: 50 tokens
+    MOVI R0, 14             ; syscall: DECAY_BUDGET
+    SYSCALL
+    MOV  R2, R0             ; R2 = remaining budget after decay
+
+    ; ── Check if budget is exhausted ──
+    MOVI R3, 10             ; minimum threshold
+    JLT  R2, R3, exhausted  ; if budget < threshold → block
+
+    ; ── Also check call count — enforce max calls ──
+    MOVI R0, 13             ; syscall: GET_CALL_COUNT
+    SYSCALL
+    MOV  R4, R0             ; R4 = call count
+
+    MOVI R5, 100            ; max calls before mandatory cooldown
+    JGT  R4, R5, exhausted  ; if too many calls → block
+
+    MOVI R0, 0              ; ALLOW
+    HALT
+
+exhausted:
+    MOVI R1, 7              ; reason: BUDGET_EXHAUSTED
+    MOVI R0, 8              ; syscall: SET_VIOLATION
+    SYSCALL
+    MOVI R0, 1              ; BLOCK
+    HALT
