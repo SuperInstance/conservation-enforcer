@@ -176,10 +176,21 @@ block:
 def scope_discipline_policy(min_overlap: int = 120, max_expansion: int = 10) -> bytes:
     """Block outputs that drift outside the input's topic scope.
 
-    min_overlap is the minimum word overlap ratio × 1000 (120 = 12%).
-    max_expansion is the maximum ratio of output length to input length.
-    Conservation law: Scope discipline — output stays in the input's potential well.
+    min_overlap is the minimum word overlap ratio x 1000 (120 = 12%).
+    max_expansion is the maximum ratio of output length to input length (>= 1).
+    Conservation law: Scope discipline -- output stays in the input's potential well.
     """
+    if max_expansion < 1:
+        raise ValueError("max_expansion must be >= 1")
+
+    # Build R6 = input_len * max_expansion via repeated addition. Each line is
+    # one instruction; the count is driven by the max_expansion parameter so it
+    # is actually honored (previously this was hardcoded to 10x).
+    mult_lines = ["MOV  R6, R4     ; R6 = 1x input"]
+    for i in range(2, max_expansion + 1):
+        mult_lines.append(f"IADD R6, R6, R4     ; R6 = {i}x input")
+    multiply = "\n    ".join(mult_lines)
+
     source = f"""
     ; ── Scope Discipline Conservation Law ──
 
@@ -204,15 +215,7 @@ def scope_discipline_policy(min_overlap: int = 120, max_expansion: int = 10) -> 
     JE   allow
 
     ; multiply input_len by {max_expansion} via repeated addition
-    IADD R6, R4, R4     ; 2×
-    IADD R6, R6, R4     ; 3×
-    IADD R6, R6, R4     ; 4×
-    IADD R6, R6, R4     ; 5×
-    IADD R6, R6, R4     ; 6×
-    IADD R6, R6, R4     ; 7×
-    IADD R6, R6, R4     ; 8×
-    IADD R6, R6, R4     ; 9×
-    IADD R6, R6, R4     ; 10×
+    {multiply}
 
     JGT  R5, R6, block
 
