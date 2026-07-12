@@ -76,6 +76,40 @@ class TestScopeDisciplinePolicy:
         # empty input → skips the expansion check
         assert result.allowed is True
 
+    def test_max_expansion_is_honored(self):
+        """max_expansion must actually constrain the length ratio.
+
+        Regression: the parameter was previously substituted only into a
+        comment and the multiplication was hardcoded to 10x, so
+        max_expansion=2 silently permitted a 5x expansion.
+        """
+        # input 11 chars; output ~60 chars (>2x, <10x)
+        out = "alpha bravo charlie delta echo foxtrot golf hotel india juliet"
+        strict = ConservationEnforcer(scope_discipline_policy(min_overlap=0, max_expansion=2))
+        r_strict = strict.enforce("hello world", out)
+        assert r_strict.allowed is False
+        assert "scope" in r_strict.violation.reason.lower()
+
+        loose = ConservationEnforcer(scope_discipline_policy(min_overlap=0, max_expansion=10))
+        r_loose = loose.enforce("hello world", out)
+        assert r_loose.allowed is True
+
+    def test_max_expansion_boundary_is_strict(self):
+        """JGT is strict: output exactly at max_expansion*input passes; +1 blocks."""
+        enforcer = ConservationEnforcer(scope_discipline_policy(min_overlap=0, max_expansion=3))
+        inp = "hello world"  # 11 chars
+        at_limit = "a" * (3 * len(inp))
+        over_by_one = "a" * (3 * len(inp) + 1)
+        assert enforcer.enforce(inp, at_limit).allowed is True
+        assert enforcer.enforce(inp, over_by_one).allowed is False
+
+    def test_max_expansion_rejects_invalid(self):
+        """max_expansion < 1 is nonsensical and should fail fast."""
+        with pytest.raises(ValueError):
+            scope_discipline_policy(min_overlap=0, max_expansion=0)
+        with pytest.raises(ValueError):
+            scope_discipline_policy(min_overlap=0, max_expansion=-1)
+
 
 class TestBudgetDecayPolicy:
     def test_allows_with_sufficient_budget(self):

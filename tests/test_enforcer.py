@@ -116,6 +116,33 @@ class TestEnforcementResult:
         result = enforcer.enforce("Hi", "Hello!")
         assert result.cycles > 0
 
+    def test_enforce_returns_single_result_not_tuple(self):
+        """enforce() returns one EnforcementResult, not a (allowed, corrected) tuple.
+
+        Regression guard: the README and examples/openai_integration.py both
+        documented 'allowed, corrected = enforcer.enforce(...)', which raised
+        TypeError. Pin the real contract: the returned object exposes .allowed,
+        .output, .violation, .cycles and is NOT iterable.
+        """
+        enforcer = ConservationEnforcer(length_budget_policy(max_tokens=10000), budget=10000)
+        result = enforcer.enforce("Hi", "Hello!")
+        assert isinstance(result, EnforcementResult)
+        assert result.allowed is True
+        assert result.output == "Hello!"
+        assert result.violation is None
+        assert result.cycles > 0
+        with pytest.raises(TypeError):
+            a, b = result  # noqa: F841 -- must not be unpackable
+
+    def test_blocked_result_exposes_violation_and_correction(self):
+        enforcer = ConservationEnforcer(length_budget_policy(max_tokens=3), budget=3)
+        result = enforcer.enforce("q", "this output is far too long to pass the budget")
+        assert result.allowed is False
+        assert result.violation is not None
+        assert result.violation.code != 0
+        assert "Length" in result.violation.reason
+        assert "Length" in result.output  # correction text carries the reason
+
 
 class TestEnforceWithLLM:
     def test_wraps_llm_call(self):
