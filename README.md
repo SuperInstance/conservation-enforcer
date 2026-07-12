@@ -293,12 +293,22 @@ policies/
 
 See [NEXT_HORIZONS.md](NEXT_HORIZONS.md) for the full roadmap including multi-model enforcement, formal verification, FLUX DSL, and Noether's theorem for AI.
 
-## Related Projects
+## Ecosystem
 
+### FLUX Runtime
+- [flux-vm](https://github.com/SuperInstance/flux-vm) — Python VM (`pip install flux-vm`)
+- [flux-core](https://github.com/SuperInstance/flux-core) — Rust VM (`cargo add fluxvm`)
+- [flux-js](https://github.com/SuperInstance/flux-js) — JavaScript VM (`npm install flux-js`)
 - [flux-runtime](https://github.com/SuperInstance/flux-runtime) — Full FLUX runtime (Python)
-- [flux-core](https://github.com/SuperInstance/flux-core) — FLUX bytecode runtime (Rust)
-- [flux-js](https://github.com/SuperInstance/flux-js) — FLUX VM (JavaScript)
-- [conservation-law-rs](https://github.com/SuperInstance/conservation-law-rs) — Conservation laws for agent dynamics
+
+### Conservation
+- [flux-registry](https://github.com/SuperInstance/flux-registry) — Pre-compiled policy registry (`pip install flux-registry`)
+- [flux-policy-tester](https://github.com/SuperInstance/flux-policy-tester) — Testing framework for FLUX policies
+- [conservation-law-rs](https://github.com/SuperInstance/conservation-law-rs) — Conservation laws for agent dynamics (Rust)
+
+### Philosophy
+- [AI-Writings](https://github.com/SuperInstance/AI-Writings) — Essays, fiction, poetry
+- [NEXT_HORIZONS](https://github.com/SuperInstance/SuperInstance/blob/main/NEXT_HORIZONS.md) — Strategy
 
 ## License
 
