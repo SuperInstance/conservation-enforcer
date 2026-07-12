@@ -148,25 +148,36 @@ class TestCombinedWithNewPolicies:
         assert result.allowed is False
 
     def test_combined_without_density(self):
-        """Combined policy without density check — density violations pass through."""
-        policy = combined_policy(
+        """Combined policy without density check — density violations pass through.
+
+        The same output is allowed when density is disabled and blocked when
+        density is enabled above its unique-ratio, proving min_density=0 really
+        disables the law (rather than just asserting cycles > 0, which would
+        pass regardless of whether the density branch ran).
+        """
+        # unique ratio = 4 unique / 10 total = 400 per-mille
+        output = "alpha beta gamma delta alpha beta gamma delta alpha beta"
+
+        disabled = combined_policy(
             max_tokens=10000,
             max_repetition=500,
             min_overlap=0,
             min_entropy=0,
             min_density=0,  # disabled
         )
-        enforcer = ConservationEnforcer(policy, budget=10000)
+        r_off = ConservationEnforcer(disabled, budget=10000).enforce("Write something", output)
+        assert r_off.allowed is True  # density law is a NOP
 
-        # Low density but high entropy, low repetition → passes (no density check)
-        result = enforcer.enforce(
-            "Write something",
-            "alpha beta gamma delta alpha beta gamma delta alpha beta",
+        enabled = combined_policy(
+            max_tokens=10000,
+            max_repetition=500,
+            min_overlap=0,
+            min_entropy=0,
+            min_density=500,  # above the output's 400 per-mille ratio
         )
-        # This has decent entropy and moderate repetition, so it might pass or fail
-        # depending on the exact metrics. The key test is that density isn't checked.
-        # Since min_density=0, the density law is a NOP.
-        assert result.cycles > 0
+        r_on = ConservationEnforcer(enabled, budget=10000).enforce("Write something", output)
+        assert r_on.allowed is False
+        assert "density" in r_on.violation.reason.lower()
 
     def test_combined_with_decay(self):
         """Combined policy with budget decay enabled."""
