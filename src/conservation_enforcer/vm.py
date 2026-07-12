@@ -324,7 +324,8 @@ class VM:
         else: self.running = False
     def _h_movi(self):
         reg, off = self._d_D()
-        # Store as signed value wrapped to 32-bit unsigned
+        # D-format immediate is a signed 16-bit field; load its 16-bit pattern
+        # into the register (regs.set masks to 32-bit unsigned).
         self.regs.set(reg, off & 0xFFFF)
     def _h_cmp(self):
         rd, rs = self._d_C()
