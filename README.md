@@ -270,6 +270,15 @@ HALT
 | 13 | GET_CALL_COUNT | Enforcement calls in this session |
 | 14 | DECAY_BUDGET | R1 = decay amount, returns new budget |
 
+## Cross-Implementation
+
+This component exists in two languages:
+- **Python** (`pip install conservation-enforcer`) — [SuperInstance/conservation-enforcer](https://github.com/SuperInstance/conservation-enforcer)
+- **Rust** (`cargo add si-conservation-enforcer`) — [SuperInstance/conservation-enforcer-rs](https://github.com/SuperInstance/conservation-enforcer-rs)
+
+Both implement the same specification. Choose based on your runtime.
+
+
 ## Architecture
 
 ```
