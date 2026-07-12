@@ -1,0 +1,30 @@
+;; ───────────────────────────────────────────────────────────
+;; Information Density Conservation Law
+;; ───────────────────────────────────────────────────────────
+;; Conservation principle: Every token in the output must carry
+;; information. If the ratio of unique tokens to total tokens
+;; falls below a threshold, the output is too repetitive and
+;; is blocked.
+;;
+;; Metric: unique_ratio = (unique_words / total_words) × 1000
+;; Threshold: 400 (= 40% unique minimum)
+;;
+;; Violation code: 5 (Information density)
+;; ───────────────────────────────────────────────────────────
+
+    MOVI R0, 11             ; syscall: GET_UNIQUE_RATIO
+    SYSCALL
+    MOV  R2, R0             ; R2 = unique ratio
+
+    MOVI R3, 400            ; threshold: 40% unique
+    JLT  R2, R3, block      ; if ratio < threshold → block
+
+    MOVI R0, 0              ; ALLOW
+    HALT
+
+block:
+    MOVI R1, 5              ; reason: INFORMATION_DENSITY
+    MOVI R0, 8              ; syscall: SET_VIOLATION
+    SYSCALL
+    MOVI R0, 1              ; BLOCK
+    HALT
