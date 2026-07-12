@@ -132,6 +132,8 @@ class Syscall(IntEnum):
     GET_BUDGET        = 10
     GET_UNIQUE_RATIO  = 11
     GET_ENTROPY       = 12
+    GET_CALL_COUNT    = 13   # number of enforcement calls in this session
+    DECAY_BUDGET      = 14   # R1 = decay amount, reduces budget and returns new budget
 
 
 VIOLATION_REASONS = {
@@ -139,6 +141,9 @@ VIOLATION_REASONS = {
     2: "Excessive repetition detected",
     3: "Category confinement violation",
     4: "Information entropy violation",
+    5: "Information density below threshold",
+    6: "Scope discipline violation",
+    7: "Budget exhausted (decay cooldown)",
     99: "Custom conservation law violation",
 }
 
@@ -169,6 +174,7 @@ class VM:
         self._input_text = ""
         self._output_text = ""
         self._budget = 1000
+        self._call_count = 0
         self._violated = False
         self._violation_reason = ""
         self._stack: list[int] = []
@@ -190,6 +196,9 @@ class VM:
     def set_budget(self, budget: int) -> None:
         self._budget = budget
 
+    def increment_call_count(self) -> None:
+        self._call_count += 1
+
     def reset(self) -> None:
         self.regs = RegisterFile()
         self.pc = 0
@@ -198,6 +207,7 @@ class VM:
         self._violated = False
         self._violation_reason = ""
         self._stack.clear()
+        # Note: _call_count is NOT reset — it tracks across runs
 
     def run(self, bytecode: bytes) -> int:
         """Execute bytecode. Returns R0 at HALT (0=allow, non-zero=block)."""
@@ -380,6 +390,16 @@ def _sys_entropy(vm: VM):
     vm.regs.set(0, int(ent * 1000))
 
 
+def _sys_call_count(vm: VM):
+    vm.regs.set(0, vm._call_count)
+
+
+def _sys_decay_budget(vm: VM):
+    decay = vm.regs.get(1)
+    vm._budget = max(0, vm._budget - decay)
+    vm.regs.set(0, vm._budget)
+
+
 # ── Build dispatch + syscall tables ────────────────────────────────────────
 
 VM._DISPATCH = {
@@ -409,4 +429,6 @@ VM._SYSCALLS = {
     int(Syscall.GET_BUDGET): _sys_get_budget,
     int(Syscall.GET_UNIQUE_RATIO): _sys_unique_ratio,
     int(Syscall.GET_ENTROPY): _sys_entropy,
+    int(Syscall.GET_CALL_COUNT): _sys_call_count,
+    int(Syscall.DECAY_BUDGET): _sys_decay_budget,
 }
