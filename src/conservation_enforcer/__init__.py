@@ -18,6 +18,7 @@ from .assembler import assemble
 from .enforcer import ConservationEnforcer, EnforcementResult, Violation
 from .audit import AuditLog, AuditEntry
 from .metrics import MetricsCollector, MetricsSnapshot
+from .budget import CognitiveBudget, BudgetExceededError
 from .policies import (
     length_budget_policy,
     repetition_policy,
@@ -55,4 +56,6 @@ __all__ = [
     "information_density_policy",
     "scope_discipline_policy",
     "budget_decay_policy",
+    "CognitiveBudget",
+    "BudgetExceededError",
 ]
