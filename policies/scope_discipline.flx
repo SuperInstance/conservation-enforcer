@@ -38,7 +38,6 @@
     CMP  R4, R0
     JE   allow              ; empty input → skip ratio check
 
-    IADD R6, R4, R0         ; R6 = R4 + 0 (just copy for now)
     ; Calculate R5 / R4 and check if > 10
     ; Use a simple loop to multiply R4 by 10
     MOV  R7, R4             ; R7 = input_len

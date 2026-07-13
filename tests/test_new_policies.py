@@ -76,6 +76,40 @@ class TestScopeDisciplinePolicy:
         # empty input → skips the expansion check
         assert result.allowed is True
 
+    def test_max_expansion_is_honored(self):
+        """max_expansion must actually constrain the length ratio.
+
+        Regression: the parameter was previously substituted only into a
+        comment and the multiplication was hardcoded to 10x, so
+        max_expansion=2 silently permitted a 5x expansion.
+        """
+        # input 11 chars; output ~60 chars (>2x, <10x)
+        out = "alpha bravo charlie delta echo foxtrot golf hotel india juliet"
+        strict = ConservationEnforcer(scope_discipline_policy(min_overlap=0, max_expansion=2))
+        r_strict = strict.enforce("hello world", out)
+        assert r_strict.allowed is False
+        assert "scope" in r_strict.violation.reason.lower()
+
+        loose = ConservationEnforcer(scope_discipline_policy(min_overlap=0, max_expansion=10))
+        r_loose = loose.enforce("hello world", out)
+        assert r_loose.allowed is True
+
+    def test_max_expansion_boundary_is_strict(self):
+        """JGT is strict: output exactly at max_expansion*input passes; +1 blocks."""
+        enforcer = ConservationEnforcer(scope_discipline_policy(min_overlap=0, max_expansion=3))
+        inp = "hello world"  # 11 chars
+        at_limit = "a" * (3 * len(inp))
+        over_by_one = "a" * (3 * len(inp) + 1)
+        assert enforcer.enforce(inp, at_limit).allowed is True
+        assert enforcer.enforce(inp, over_by_one).allowed is False
+
+    def test_max_expansion_rejects_invalid(self):
+        """max_expansion < 1 is nonsensical and should fail fast."""
+        with pytest.raises(ValueError):
+            scope_discipline_policy(min_overlap=0, max_expansion=0)
+        with pytest.raises(ValueError):
+            scope_discipline_policy(min_overlap=0, max_expansion=-1)
+
 
 class TestBudgetDecayPolicy:
     def test_allows_with_sufficient_budget(self):
@@ -148,25 +182,36 @@ class TestCombinedWithNewPolicies:
         assert result.allowed is False
 
     def test_combined_without_density(self):
-        """Combined policy without density check — density violations pass through."""
-        policy = combined_policy(
+        """Combined policy without density check — density violations pass through.
+
+        The same output is allowed when density is disabled and blocked when
+        density is enabled above its unique-ratio, proving min_density=0 really
+        disables the law (rather than just asserting cycles > 0, which would
+        pass regardless of whether the density branch ran).
+        """
+        # unique ratio = 4 unique / 10 total = 400 per-mille
+        output = "alpha beta gamma delta alpha beta gamma delta alpha beta"
+
+        disabled = combined_policy(
             max_tokens=10000,
             max_repetition=500,
             min_overlap=0,
             min_entropy=0,
             min_density=0,  # disabled
         )
-        enforcer = ConservationEnforcer(policy, budget=10000)
+        r_off = ConservationEnforcer(disabled, budget=10000).enforce("Write something", output)
+        assert r_off.allowed is True  # density law is a NOP
 
-        # Low density but high entropy, low repetition → passes (no density check)
-        result = enforcer.enforce(
-            "Write something",
-            "alpha beta gamma delta alpha beta gamma delta alpha beta",
+        enabled = combined_policy(
+            max_tokens=10000,
+            max_repetition=500,
+            min_overlap=0,
+            min_entropy=0,
+            min_density=500,  # above the output's 400 per-mille ratio
         )
-        # This has decent entropy and moderate repetition, so it might pass or fail
-        # depending on the exact metrics. The key test is that density isn't checked.
-        # Since min_density=0, the density law is a NOP.
-        assert result.cycles > 0
+        r_on = ConservationEnforcer(enabled, budget=10000).enforce("Write something", output)
+        assert r_on.allowed is False
+        assert "density" in r_on.violation.reason.lower()
 
     def test_combined_with_decay(self):
         """Combined policy with budget decay enabled."""

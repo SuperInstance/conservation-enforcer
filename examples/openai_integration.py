@@ -17,7 +17,6 @@ from conservation_enforcer import (
     MetricsCollector,
     combined_policy,
 )
-from audit import AuditLog  # optional, for audit logging
 
 try:
     from openai import OpenAI
@@ -96,7 +95,7 @@ def main():
 
         # Enforce conservation laws
         budget_before = enforcer.remaining_budget
-        allowed, corrected = enforcer.enforce(
+        result = enforcer.enforce(
             input_text=user_input,
             output_text=raw_output,
         )
@@ -104,19 +103,19 @@ def main():
 
         # Record metrics
         metrics.record(
-            allowed=allowed,
-            violation_reason=None if allowed else corrected.violation.reason,
-            cycles=allowed.cycles,
+            allowed=result.allowed,
+            violation_reason=None if result.allowed else result.violation.reason,
+            cycles=result.cycles,
             budget_before=budget_before,
             budget_after=budget_after,
         )
 
-        if allowed:
-            print(f"✅ ALLOWED ({allowed.cycles} cycles)")
-            print(f"   Output: {allowed.output[:80]}{'...' if len(allowed.output) > 80 else ''}")
+        if result.allowed:
+            print(f"✅ ALLOWED ({result.cycles} cycles)")
+            print(f"   Output: {result.output[:80]}{'...' if len(result.output) > 80 else ''}")
         else:
-            print(f"🚫 BLOCKED: {corrected.violation.reason}")
-            print(f"   Correction: {corrected.output}")
+            print(f"🚫 BLOCKED: {result.violation.reason}")
+            print(f"   Correction: {result.output}")
 
     # ── Show metrics ──
     print("\n" + "=" * 60)

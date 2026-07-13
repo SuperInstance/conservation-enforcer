@@ -1,7 +1,9 @@
 """Tests for the FLUX VM."""
 
 import pytest
-from conservation_enforcer.vm import VM, Op, VMError, VMDivisionByZero
+from conservation_enforcer.vm import (
+    VM, Op, VMError, VMDivisionByZero, VMInvalidOpcode, Memory,
+)
 
 
 class TestBasicArithmetic:
@@ -151,3 +153,108 @@ class TestStack:
         ])
         vm = VM(); vm.run(code)
         assert vm.regs.get(0) == 6
+
+
+class TestMemory:
+    """Regression coverage for Memory.store_i32 / load_i32 round-tripping.
+
+    Previously store_i32 corrupted genuine negatives and crashed with
+    struct.error for register values >= 0x80000000 (how the register file
+    represents negatives). These tests pin the fixed 32-bit-preservation
+    behavior.
+    """
+
+    def test_store_load_i32_roundtrip(self):
+        m = Memory()
+        cases = [0, 1, 42, -1, -100, 2147483647, -2147483648]
+        for i, val in enumerate(cases):
+            m.store_i32(i * 4, val)
+        for i, val in enumerate(cases):
+            assert m.load_i32(i * 4) == val
+
+    def test_store_i32_masks_to_32_bits(self):
+        m = Memory()
+        # 0x100000000 should wrap to 0
+        m.store_i32(0, 0x100000000)
+        assert m.load_i32(0) == 0
+
+    def test_store_i32_out_of_bounds_is_safe(self):
+        m = Memory(size=16)
+        # Writing past the end must not raise and must not corrupt earlier data.
+        m.store_i32(0, 7)
+        m.store_i32(20, 99)  # out of bounds (16-byte buffer)
+        assert m.load_i32(0) == 7
+
+    def test_store_load_bytes_roundtrip(self):
+        m = Memory(size=64)
+        payload = b"\x01\x02\x03\x04hello"
+        m.store_bytes(8, payload)
+        assert m.load_bytes(8, len(payload)) == payload
+
+
+class TestStoreLoadInstructions:
+    """The STORE/LOAD instructions must preserve the full register bit pattern."""
+
+    def test_store_load_preserves_negative_value(self):
+        # R0 = 5 - 10 = -5 (held as 0xFFFFFFFB in the register file);
+        # STORE R0 -> mem[0]; LOAD R2 <- mem[0]; the loaded bit pattern must
+        # match the stored one. Pre-fix this raised struct.error.
+        code = bytes([
+            int(Op.MOVI),0,5,0,
+            int(Op.MOVI),1,10,0,
+            int(Op.ISUB),0,0,1,   # R0 = -5 (0xFFFFFFFB)
+            int(Op.MOVI),1,0,0,   # R1 = addr 0
+            int(Op.STORE),0,1,    # mem[R1] = R0
+            int(Op.MOVI),3,0,0,   # R3 = addr 0
+            int(Op.LOAD),2,3,     # R2 = mem[R3]
+            int(Op.HALT),
+        ])
+        vm = VM(); vm.run(code)
+        # Register file stores unsigned 32-bit, so the loaded value is the
+        # unsigned representation of -5.
+        assert vm.regs.get(2) == 0xFFFFFFFB
+        assert vm.regs.get(2) == vm.regs.get(0)
+
+
+class TestErrorPaths:
+    def test_invalid_opcode_raises(self):
+        # 0xAA is not a valid opcode.
+        with pytest.raises(VMInvalidOpcode):
+            vm = VM(); vm.run(bytes([0xAA]))
+
+    def test_unhandled_valid_opcode_raises(self):
+        # Construct a VM whose dispatch table is missing an entry for an opcode
+        # that is otherwise valid, to exercise the "no handler" branch.
+        vm = VM()
+        saved = VM._DISPATCH[Op.NOP]
+        try:
+            VM._DISPATCH.pop(Op.NOP)
+            with pytest.raises(VMInvalidOpcode):
+                vm.run(bytes([int(Op.NOP)]))
+        finally:
+            VM._DISPATCH[Op.NOP] = saved
+
+    def test_cycle_budget_exhaustion_raises(self):
+        # Infinite loop: JMP -4 (back to itself).
+        # JMP is D-format: opcode + reg(0) + off_lo + off_hi. off = -4.
+        code = bytes([int(Op.JMP), 0, 0xFC, 0xFF])
+        # Shrink the cap so the test is fast.
+        original = VM.MAX_CYCLES
+        VM.MAX_CYCLES = 1000
+        try:
+            with pytest.raises(VMError, match="Cycle budget"):
+                vm = VM(); vm.run(code)
+        finally:
+            VM.MAX_CYCLES = original
+
+    def test_mod_by_zero(self):
+        code = bytes([int(Op.MOVI),0,10,0, int(Op.MOVI),1,0,0, int(Op.IMOD),2,0,1, int(Op.HALT)])
+        vm = VM()
+        with pytest.raises(VMDivisionByZero):
+            vm.run(code)
+
+    def test_halt_sets_result_register(self):
+        # R0 at HALT is the decision value: 0 = allow.
+        code = bytes([int(Op.MOVI),0,0,0, int(Op.HALT)])
+        vm = VM()
+        assert vm.run(code) == 0

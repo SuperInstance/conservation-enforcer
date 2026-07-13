@@ -74,22 +74,22 @@ from conservation_enforcer import ConservationEnforcer, combined_policy
 from openai import OpenAI
 
 client = OpenAI()
-enforcer = ConservationEnforcer.from_policy_file("policies/length_budget.bin")
+enforcer = ConservationEnforcer(combined_policy(), budget=500)
 
 response = client.chat.completions.create(
     model="gpt-4",
     messages=[{"role": "user", "content": "Tell me everything about quantum physics"}]
 )
 
-allowed, corrected = enforcer.enforce(
+result = enforcer.enforce(
     input_text="Tell me everything about quantum physics",
-    output_text=response.choices[0].message.content
+    output_text=response.choices[0].message.content,
 )
 
-if not allowed:
-    print(f"Blocked by conservation law: {corrected}")
+if not result.allowed:
+    print(f"Blocked by conservation law: {result.violation.reason}")
 else:
-    print(corrected)
+    print(result.output)
 ```
 
 See [`examples/openai_integration.py`](examples/openai_integration.py) for a full runnable example.
