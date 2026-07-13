@@ -10,9 +10,21 @@ authors = [{name = "SuperInstance"}]
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.10"
+keywords = ["conservation", "ai", "governance", "flux", "bytecode", "llm", "github-bot"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+github = ["PyGithub>=2.0"]
+complete = ["pytest>=7.0", "PyGithub>=2.0"]
+
+[project.urls]
+Homepage = "https://github.com/SuperInstance/conservation-enforcer"
+Documentation = "https://github.com/SuperInstance/conservation-enforcer#readme"
+Repository = "https://github.com/SuperInstance/conservation-enforcer"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["conservation_enforcer*", "github_bot*"]
+
+[project.scripts]
+conservation-github-bot = "github_bot.conservation_github_bot:main"
