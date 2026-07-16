@@ -208,7 +208,11 @@ class VM:
         self.regs = RegisterFile()
         self.pc = 0
         self.cycle_count = 0
-        self.running = False
+        # ``running`` is the alive-or-done flag consulted by the main loop.
+        # Setting it True here means: after a successful reset, the VM is
+        # ready to execute; HALT and top-level RET clear it. (Setting it
+        # False here used to be a bug — the loop never checked it.)
+        self.running = True
         self._violated = False
         self._violation_reason = ""
         self._stack.clear()
@@ -219,7 +223,7 @@ class VM:
         self.bytecode = bytecode
         self.reset()
         try:
-            while self.cycle_count < self.MAX_CYCLES:
+            while self.running and self.cycle_count < self.MAX_CYCLES:
                 if self.pc >= len(self.bytecode):
                     break
                 self._step()
@@ -320,13 +324,21 @@ class VM:
         if self._stack: self._stack.append(self._stack[-1])
     def _h_ret(self):
         self._d_A()
-        if self._stack: self.pc = self._stack.pop()
-        else: self.running = False
+        if self._stack:
+            self.pc = self._stack.pop()
+        else:
+            # Top-level RET (no CALL to return to). Stop the VM cleanly
+            # rather than falling through into whatever comes next in the
+            # bytecode buffer.
+            self.running = False
     def _h_movi(self):
         reg, off = self._d_D()
-        # D-format immediate is a signed 16-bit field; load its 16-bit pattern
-        # into the register (regs.set masks to 32-bit unsigned).
-        self.regs.set(reg, off & 0xFFFF)
+        # D-format immediate is a signed 16-bit field. Sign-extend to the
+        # register's 32-bit unsigned representation so callers can use
+        # ``MOVI R0, -1`` and get 0xFFFFFFFF (the documented i16 contract).
+        # regs.set masks further to 32-bit, so passing a negative ``off``
+        # via Python's two's-complement masking gives the right answer.
+        self.regs.set(reg, off & 0xFFFFFFFF)
     def _h_cmp(self):
         rd, rs = self._d_C()
         a = self.regs.get(rd); b = self.regs.get(rs)

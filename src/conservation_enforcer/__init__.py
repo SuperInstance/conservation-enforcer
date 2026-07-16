@@ -18,7 +18,12 @@ from .assembler import assemble
 from .enforcer import ConservationEnforcer, EnforcementResult, Violation
 from .audit import AuditLog, AuditEntry
 from .metrics import MetricsCollector, MetricsSnapshot
-from .budget import CognitiveBudget, BudgetExceededError
+from .budget import CognitiveBudget as _LegacyCognitiveBudget, BudgetExceededError
+from .cognitive_budget import (
+    CognitiveBudget,
+    ChartThickness,
+    BudgetSnapshot,
+)
 from .policies import (
     length_budget_policy,
     repetition_policy,
@@ -30,7 +35,7 @@ from .policies import (
     budget_decay_policy,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __author__ = "SuperInstance"
 __license__ = "MIT"
 
@@ -57,5 +62,7 @@ __all__ = [
     "scope_discipline_policy",
     "budget_decay_policy",
     "CognitiveBudget",
+    "ChartThickness",
+    "BudgetSnapshot",
     "BudgetExceededError",
 ]

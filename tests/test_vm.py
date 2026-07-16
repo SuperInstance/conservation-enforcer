@@ -258,3 +258,82 @@ class TestErrorPaths:
         code = bytes([int(Op.MOVI),0,0,0, int(Op.HALT)])
         vm = VM()
         assert vm.run(code) == 0
+
+
+class TestLifecycleFixes:
+    """Regression coverage for bugs found in the v0.2.0 audit.
+
+    BUG #1 (HIGH): ``running`` flag was dead code — a top-level RET with an
+    empty call stack set ``self.running = False`` but the main loop never
+    checked it, so the VM silently fell through to whatever came next.
+
+    BUG #2 (MED): ``_h_movi`` stored the raw 16-bit pattern (``off & 0xFFFF``)
+    instead of sign-extending the documented i16 immediate, so
+    ``MOVI R0, -1`` loaded 65535 instead of 0xFFFFFFFF.
+    """
+
+    def test_ret_with_empty_stack_halts_cleanly(self):
+        # RET (no CALL to return to) followed by a sentinel MOVI. Pre-fix the
+        # VM executed the sentinel because ``running=False`` was unchecked.
+        code = bytes([
+            int(Op.RET),                # top-level RET
+            int(Op.MOVI), 0, 99, 0,     # sentinel — must NOT execute
+            int(Op.HALT),
+        ])
+        vm = VM()
+        result = vm.run(code)
+        # VM halted cleanly; R0 was never set so it should be 0 (initial value).
+        assert result == 0, f"RET-with-empty-stack must halt; got R0={result}"
+        assert vm.cycle_count == 1, f"RET must take exactly one cycle; got {vm.cycle_count}"
+
+    def test_ret_after_balanced_call_still_returns(self):
+        # CALL/RET balance still works after the lifecycle fix. CALL pushes
+        # the post-decode PC (here = 4) onto the call stack and adds the
+        # 16-bit offset (here = 4), so execution jumps to byte 8. RET pops
+        # the return address (4) and execution continues at the HALT.
+        code = bytes([
+            int(Op.CALL), 0, 4, 0,    # 0..3: CALL +4 → pc=8 (after pushing 4)
+            int(Op.HALT),              # 4:    return site — HALT terminates
+            0, 0, 0,                   # 5..7: padding (skipped by CALL target)
+            int(Op.IADD), 2, 0, 1,    # 8..11: called body (IADD R2, R0, R1)
+            int(Op.RET),               # 12:   RET → pc=4 → HALT
+        ])
+        vm = VM()
+        result = vm.run(code)
+        assert result == 0
+        assert vm.regs.get(2) == 0  # IADD did execute with R0=0, R1=0
+
+    def test_movi_sign_extends_negatives(self):
+        # MOVI R0, -1 must sign-extend i16 to i32: -1 → 0xFFFFFFFF.
+        code = bytes([int(Op.MOVI), 0, 0xFF, 0xFF, int(Op.HALT)])
+        vm = VM()
+        vm.run(code)
+        assert vm.regs.get(0) == 0xFFFFFFFF, (
+            f"MOVI R0, -1 must give 0xFFFFFFFF; got {vm.regs.get(0)}"
+        )
+
+    def test_movi_min_i16_value(self):
+        # MOVI R0, -32768 must give 0xFFFF8000 (sign-extended).
+        code = bytes([int(Op.MOVI), 0, 0x00, 0x80, int(Op.HALT)])
+        vm = VM()
+        vm.run(code)
+        assert vm.regs.get(0) == 0xFFFF8000
+
+    def test_movi_max_i16_value(self):
+        # MOVI R0, 32767 stays in the positive range (no sign bit set).
+        code = bytes([int(Op.MOVI), 0, 0xFF, 0x7F, int(Op.HALT)])
+        vm = VM()
+        vm.run(code)
+        assert vm.regs.get(0) == 32767
+
+    def test_movi_round_trip_assembler_to_vm(self):
+        # ``MOVI R0, -1`` assembled by the high-level assembler must round-trip
+        # to 0xFFFFFFFF at runtime (was the user-visible symptom of BUG #2).
+        from conservation_enforcer import assemble
+        code = assemble("MOVI R0, -1\nHALT")
+        vm = VM()
+        vm.run(code)
+        assert vm.regs.get(0) == 0xFFFFFFFF, (
+            f"Assembler+VM round-trip of MOVI R0, -1 must give 0xFFFFFFFF; "
+            f"got {vm.regs.get(0)}"
+        )
