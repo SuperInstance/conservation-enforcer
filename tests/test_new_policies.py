@@ -231,3 +231,31 @@ class TestCombinedWithNewPolicies:
         r2 = enforcer.enforce("q", "a reasonable response here")
         assert r2.allowed is False
         assert "budget" in r2.violation.reason.lower() or "cooldown" in r2.violation.reason.lower()
+
+
+class TestScopeDisciplineExpansionCap:
+    """Regression coverage for the unbounded max_expansion bug.
+
+    BUG #3 (LOW): ``scope_discipline_policy(max_expansion=N)`` linearly
+    scales its emitted bytecode by N (one IADD per unit). A caller passing
+    a huge value would force an arbitrarily large bytecode, and the function
+    could OOM with no warning. Cap at 1000 with a clear ValueError.
+    """
+
+    def test_max_expansion_rejects_above_cap(self):
+        with pytest.raises(ValueError, match="max_expansion must be <= 1000"):
+            scope_discipline_policy(max_expansion=10_000)
+        with pytest.raises(ValueError, match="max_expansion must be <= 1000"):
+            scope_discipline_policy(max_expansion=1001)
+
+    def test_max_expansion_accepts_at_cap(self):
+        # The cap itself is a valid value (legitimately needs ~1000x scope).
+        code = scope_discipline_policy(max_expansion=1000)
+        assert len(code) > 0
+        # Should be tiny (~4KB) compared to the old unbounded behavior.
+        assert len(code) < 10_000
+
+    def test_max_expansion_still_rejects_below_one(self):
+        # The pre-existing lower-bound check is unchanged.
+        with pytest.raises(ValueError, match="max_expansion must be >= 1"):
+            scope_discipline_policy(max_expansion=0)

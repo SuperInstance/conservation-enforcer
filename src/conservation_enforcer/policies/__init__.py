@@ -179,9 +179,22 @@ def scope_discipline_policy(min_overlap: int = 120, max_expansion: int = 10) -> 
     min_overlap is the minimum word overlap ratio x 1000 (120 = 12%).
     max_expansion is the maximum ratio of output length to input length (>= 1).
     Conservation law: Scope discipline -- output stays in the input's potential well.
+
+    Raises:
+        ValueError: if ``max_expansion < 1`` or exceeds the safety cap (1000).
+            The policy emits one IADD per unit of expansion, so unbounded
+            values can produce prohibitively large bytecode. 1000 is three
+            orders of magnitude above the default (10) and is the upper
+            bound for any legitimate use case.
     """
     if max_expansion < 1:
         raise ValueError("max_expansion must be >= 1")
+    if max_expansion > 1000:
+        raise ValueError(
+            f"max_expansion must be <= 1000 (got {max_expansion}); larger "
+            f"values produce too much bytecode. If you need a looser limit, "
+            f"fork the policy."
+        )
 
     # Build R6 = input_len * max_expansion via repeated addition. Each line is
     # one instruction; the count is driven by the max_expansion parameter so it
