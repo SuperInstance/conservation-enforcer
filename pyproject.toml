@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "conservation-enforcer"
-version = "0.2.1"
+version = "0.2.2"
 description = "FLUX bytecode conservation-law enforcement for LLM outputs"
 authors = [{name = "SuperInstance"}]
 license = {text = "MIT"}

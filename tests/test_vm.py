@@ -337,3 +337,101 @@ class TestLifecycleFixes:
             f"Assembler+VM round-trip of MOVI R0, -1 must give 0xFFFFFFFF; "
             f"got {vm.regs.get(0)}"
         )
+
+
+class TestSignedDivision:
+    """IDIV/IMOD must use C-style truncated division, not Python floor.
+
+n    The VM stores values as unsigned 32-bit. When a negative dividend
+    (stored as 2's complement) is divided, the result must match what
+    C/hardware produces: truncation toward zero.
+
+    Before the fix, IDIV used Python ``//`` on the raw unsigned values,
+    which floors instead of truncating. For -7 // 2 that gives 0x7FFFFFFC
+    (2147483644) instead of the correct 0xFFFFFFFD (-3 as i32).
+    """
+
+    def test_idiv_negative_dividend_positive_divisor(self):
+        # -7 / 2 should be -3 (truncation toward zero), not -4 (floor)
+        from conservation_enforcer.vm import VM, Op
+        neg7 = (-7) & 0xFFFFFFFF
+        code = bytes([
+            int(Op.MOVI), 0, neg7 & 0xFF, (neg7 >> 8) & 0xFF,
+            int(Op.MOVI), 1, 2, 0,
+            int(Op.IDIV), 2, 0, 1,
+            int(Op.HALT),
+        ])
+        vm = VM(); vm.run(code)
+        result = vm.regs.get(2)
+        expected = (-3) & 0xFFFFFFFF
+        assert result == expected, f"IDIV(-7, 2): got 0x{result:08X}, expected 0x{expected:08X}"
+
+    def test_idiv_negative_dividend_even(self):
+        # -8 / 2 should be -4 (exact division, truncation == floor here)
+        from conservation_enforcer.vm import VM, Op
+        neg8 = (-8) & 0xFFFFFFFF
+        code = bytes([
+            int(Op.MOVI), 0, neg8 & 0xFF, (neg8 >> 8) & 0xFF,
+            int(Op.MOVI), 1, 2, 0,
+            int(Op.IDIV), 2, 0, 1,
+            int(Op.HALT),
+        ])
+        vm = VM(); vm.run(code)
+        result = vm._to_signed(vm.regs.get(2))
+        assert result == -4
+
+    def test_idiv_both_negative(self):
+        # -7 / -2 should be 3 (truncation toward zero)
+        from conservation_enforcer.vm import VM, Op
+        neg7 = (-7) & 0xFFFFFFFF
+        neg2 = (-2) & 0xFFFFFFFF
+        code = bytes([
+            int(Op.MOVI), 0, neg7 & 0xFF, (neg7 >> 8) & 0xFF,
+            int(Op.MOVI), 1, neg2 & 0xFF, (neg2 >> 8) & 0xFF,
+            int(Op.IDIV), 2, 0, 1,
+            int(Op.HALT),
+        ])
+        vm = VM(); vm.run(code)
+        result = vm._to_signed(vm.regs.get(2))
+        assert result == 3
+
+    def test_imod_negative_dividend(self):
+        # -7 % 2 should be -1 (C: sign follows dividend), not 1 (Python floor)
+        from conservation_enforcer.vm import VM, Op
+        neg7 = (-7) & 0xFFFFFFFF
+        code = bytes([
+            int(Op.MOVI), 0, neg7 & 0xFF, (neg7 >> 8) & 0xFF,
+            int(Op.MOVI), 1, 2, 0,
+            int(Op.IMOD), 2, 0, 1,
+            int(Op.HALT),
+        ])
+        vm = VM(); vm.run(code)
+        result = vm._to_signed(vm.regs.get(2))
+        assert result == -1
+
+    def test_imod_both_negative(self):
+        # -7 % -2 should be -1 (C: sign follows dividend)
+        from conservation_enforcer.vm import VM, Op
+        neg7 = (-7) & 0xFFFFFFFF
+        neg2 = (-2) & 0xFFFFFFFF
+        code = bytes([
+            int(Op.MOVI), 0, neg7 & 0xFF, (neg7 >> 8) & 0xFF,
+            int(Op.MOVI), 1, neg2 & 0xFF, (neg2 >> 8) & 0xFF,
+            int(Op.IMOD), 2, 0, 1,
+            int(Op.HALT),
+        ])
+        vm = VM(); vm.run(code)
+        result = vm._to_signed(vm.regs.get(2))
+        assert result == -1
+
+    def test_idiv_positive_still_correct(self):
+        # 100 / 7 = 14 (regression guard: fix must not break positive case)
+        from conservation_enforcer.vm import VM, Op
+        code = bytes([
+            int(Op.MOVI), 0, 100, 0,
+            int(Op.MOVI), 1, 7, 0,
+            int(Op.IDIV), 2, 0, 1,
+            int(Op.HALT),
+        ])
+        vm = VM(); vm.run(code)
+        assert vm.regs.get(2) == 14

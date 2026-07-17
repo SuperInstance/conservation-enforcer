@@ -287,16 +287,32 @@ class VM:
         rd, rs1, rs2 = self._d_E(); self.regs.set(rd, self.regs.get(rs1) - self.regs.get(rs2))
     def _h_imul(self):
         rd, rs1, rs2 = self._d_E(); self.regs.set(rd, self.regs.get(rs1) * self.regs.get(rs2))
+    @staticmethod
+    def _to_signed(uval: int) -> int:
+        """Convert a 32-bit unsigned value to its signed representation."""
+        return uval if uval < 0x80000000 else uval - 0x100000000
+
     def _h_idiv(self):
         rd, rs1, rs2 = self._d_E()
         d = self.regs.get(rs2)
         if d == 0: raise VMDivisionByZero(f"pc={self.pc}")
-        self.regs.set(rd, self.regs.get(rs1) // d)
+        a = self._to_signed(self.regs.get(rs1))
+        b = self._to_signed(d)
+        # C-style truncated division (toward zero), not Python floor division.
+        # Without this, -7 // 2 gives -4 (floor) instead of -3 (truncation).
+        q = abs(a) // abs(b)
+        if (a < 0) != (b < 0): q = -q
+        self.regs.set(rd, q & 0xFFFFFFFF)
     def _h_imod(self):
         rd, rs1, rs2 = self._d_E()
         d = self.regs.get(rs2)
         if d == 0: raise VMDivisionByZero(f"pc={self.pc}")
-        self.regs.set(rd, self.regs.get(rs1) % d)
+        a = self._to_signed(self.regs.get(rs1))
+        b = self._to_signed(d)
+        # C-style modulo: result takes the sign of the dividend.
+        r = abs(a) % abs(b)
+        if a < 0: r = -r
+        self.regs.set(rd, r & 0xFFFFFFFF)
     def _h_ineg(self):
         rd, rs = self._d_C(); self.regs.set(rd, (-self.regs.get(rs)) & 0xFFFFFFFF)
     def _h_inc(self):
