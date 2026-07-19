@@ -88,13 +88,15 @@ class RegisterFile:
         return self.r[idx]
 
     def set(self, idx: int, val: int) -> None:
-        self.r[idx] = val & 0xFFFFFFFF
-        self._update_flags(self.r[idx])
+        # Store as signed 32-bit (matches Rust VM i32 registers)
+        val = val & 0xFFFFFFFF
+        if val >= 0x80000000:
+            val -= 0x100000000
+        self.r[idx] = val
+        self.flag_zero = val == 0
+        self.flag_sign = val < 0
 
-    def _update_flags(self, uval: int) -> None:
-        self.flag_zero = (uval & 0xFFFFFFFF) == 0
-        signed = uval if uval < 0x80000000 else uval - 0x100000000
-        self.flag_sign = signed < 0
+    # _update_flags removed — flags now set directly in set()
 
 
 # ── Memory ─────────────────────────────────────────────────────────────────
@@ -326,7 +328,13 @@ class VM:
     def _h_ixor(self):
         rd, rs1, rs2 = self._d_E(); self.regs.set(rd, self.regs.get(rs1) ^ self.regs.get(rs2))
     def _h_inot(self):
-        rd, rs = self._d_C(); self.regs.set(rd, (~self.regs.get(rs)) & 0xFFFFFFFF)
+        rd, rs = self._d_C()
+        val = ~self.regs.get(rs)
+        # Convert to signed 32-bit (Python ints are arbitrary precision)
+        val = val & 0xFFFFFFFF
+        if val >= 0x80000000:
+            val -= 0x100000000
+        self.regs.set(rd, val)
     def _h_ishl(self):
         rd, rs1, rs2 = self._d_E(); self.regs.set(rd, self.regs.get(rs1) << self.regs.get(rs2))
     def _h_ishr(self):
