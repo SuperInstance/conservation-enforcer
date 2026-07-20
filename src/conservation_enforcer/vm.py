@@ -115,13 +115,18 @@ class Memory:
             struct.pack_into('<I', self.buf, addr, val & 0xFFFFFFFF)
 
     def load_i32(self, addr: int) -> int:
+        if not (0 <= addr and addr + 4 <= len(self.buf)):
+            return 0
         return struct.unpack_from('<i', self.buf, addr)[0]
 
     def store_bytes(self, addr: int, data: bytes) -> None:
         end = min(addr + len(data), len(self.buf))
+        if addr < 0: addr = 0; end = min(len(data), len(self.buf))
         self.buf[addr:end] = data[:end - addr]
 
     def load_bytes(self, addr: int, length: int) -> bytes:
+        if not (0 <= addr and addr + length <= len(self.buf)):
+            return bytes(max(0, length))
         return bytes(self.buf[addr:addr + length])
 
 
