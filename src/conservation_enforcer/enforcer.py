@@ -96,6 +96,8 @@ class ConservationEnforcer:
 
     def replenish_budget(self, amount: int) -> None:
         """Replenish the conservation budget (e.g., after cooldown)."""
+        if amount < 0:
+            raise ValueError(f"replenish amount must be non-negative, got {amount}")
         self.budget += amount
 
     def reset_budget(self) -> None:
